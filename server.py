@@ -102,6 +102,8 @@ class Handler(BaseHTTPRequestHandler):
         p=urlsplit(self.path).path
         if p=='/':
             raw=(BASE/'index.html').read_bytes();self.send_response(200);self.headers_common('text/html; charset=utf-8');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
+        if p=='/app.css':
+            raw=(BASE/'app.css').read_bytes();self.send_response(200);self.headers_common('text/css; charset=utf-8');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
         if p=='/app.js':
             raw=(BASE/'app.js').read_bytes();self.send_response(200);self.headers_common('text/javascript; charset=utf-8');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
         if p=='/api/me':
