@@ -1,0 +1,19 @@
+'use strict';
+const $=id=>document.getElementById(id);let me=null,employees=[];
+async function api(path,method='GET',body){let r=await fetch('/api/'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...(method!=='GET'?{'X-CSRF-Token':me?.csrf||''}:{})},body:body?JSON.stringify(body):undefined});let d=await r.json();if(!r.ok)throw Error(d.error||'요청 실패');return d;}
+function minutes(){let [a,b]=$('start').value.split(':').map(Number),[c,d]=$('end').value.split(':').map(Number),span=(c*60+d-a*60-b+1440)%1440,br=Number($('break').value);return span>br?span-br:-1;}
+function fmt(n){return n<0?'시간 확인 필요':`${Math.floor(n/60)}시간 ${n%60}분`;}
+function calc(){$('total').textContent=fmt(minutes());}
+function message(s){$('status').textContent=s;}
+async function refresh(){let data=await api('attendance');$('rows').replaceChildren();for(let x of data.items){let tr=document.createElement('tr');for(let t of [x.work_date,x.display_name,`${x.start_time} ~ ${x.end_time}`,`${x.break_minutes}분`,fmt(x.minutes),`${Math.round(x.minutes*x.hourly_rate/60).toLocaleString()}원`]){let td=document.createElement('td');td.textContent=t;tr.append(td);}$('rows').append(tr);}}
+async function load(){let d=await api('me');me=d.user;$('login').classList.toggle('hidden',!!me);$('app').classList.toggle('hidden',!me);if(!me)return;$('who').textContent=`${me.display_name} (${me.role==='admin'?'관리자':'직원'})`;document.querySelectorAll('.adminOnly').forEach(e=>e.classList.toggle('hidden',me.role!=='admin'));if(me.role==='admin'){employees=(await api('employees')).items.filter(x=>x.active);$('employee').replaceChildren();for(let e of employees){let opt=document.createElement('option');opt.value=e.id;opt.textContent=e.display_name+' ('+e.username+')';$('employee').append(opt);}}await refresh();}
+$('loginBtn').onclick=async()=>{try{await api('login','POST',{username:$('username').value,password:$('password').value});$('password').value='';$('loginError').textContent='';await load();}catch(e){$('loginError').textContent=e.message;}};
+$('logout').onclick=async()=>{try{await api('logout','POST',{});me=null;await load();}catch(e){message(e.message)}};
+$('addEmployee').onclick=async()=>{try{await api('employees','POST',{username:$('newUsername').value,display_name:$('newName').value,password:$('newPassword').value,hourly_rate:Number($('newRate').value)});$('newPassword').value='';await load();message('직원 계정을 생성했습니다.')}catch(e){message(e.message)}};
+$('backup').onclick=async()=>{try{let d=await api('backup','POST',{});message('서버 백업 생성: '+d.filename)}catch(e){message(e.message)}};
+for(let id of ['start','end','break'])$(id).addEventListener('change',calc);
+$('review').onclick=()=>{let n=minutes();if(n<0)return message('출근·퇴근·휴게시간을 확인하세요.');if(me.role==='admin'&&!$('employee').value)return message('직원을 먼저 등록하세요.');$('summary').textContent=`${$('day').value} · ${$('start').value}부터 ${$('end').value}까지 · 휴게 ${$('break').value}분`;$('reviewTotal').textContent=fmt(n);$('agreed').checked=false;$('save').disabled=true;$('overlay').classList.remove('hidden');};
+$('agreed').onchange=()=>$('save').disabled=!$('agreed').checked;
+$('cancel').onclick=()=>$('overlay').classList.add('hidden');
+$('save').onclick=async()=>{if(!$('agreed').checked)return;let payload={work_date:$('day').value,start_time:$('start').value,end_time:$('end').value,break_minutes:Number($('break').value),confirmed:true};if(me.role==='admin')payload.employee_id=Number($('employee').value);try{await api('attendance','POST',payload);$('overlay').classList.add('hidden');await refresh();message('서버 DB에 저장했습니다.')}catch(e){message(e.message);$('overlay').classList.add('hidden');}};
+const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());$('day').value=today;calc();load().catch(e=>$('loginError').textContent=e.message);
