@@ -6,7 +6,11 @@ from datetime import datetime, timedelta, timezone
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
+import io
+import qrcode
+import qrcode.image.svg
 from zoneinfo import ZoneInfo
+from contextlib import contextmanager
 
 BASE=Path(__file__).resolve().parent
 DATA=Path(os.getenv('YD_DATA_DIR',str(BASE/'data')))
@@ -15,10 +19,21 @@ TZ=ZoneInfo('Asia/Seoul')
 LOCK=threading.RLock()
 SECURE=os.getenv('YD_SECURE_COOKIE','1')=='1'
 MAX_BODY=65536
+PUBLIC_ORIGIN=os.getenv('YD_PUBLIC_ORIGIN','').rstrip('/')
+
+def shortcut_url(locator):
+    origin=urlsplit(PUBLIC_ORIGIN)
+    if origin.scheme!='https' or not origin.netloc or origin.username or origin.password or origin.path or origin.query or origin.fragment:
+        raise ValueError('YD_PUBLIC_ORIGIN에 HTTPS 서비스 주소를 설정하세요 (경로 제외).')
+    return PUBLIC_ORIGIN+'/s/'+locator
 
 def now():return datetime.now(timezone.utc).isoformat()
+@contextmanager
 def db():
-    c=sqlite3.connect(DB,timeout=20);c.row_factory=sqlite3.Row;c.execute('PRAGMA foreign_keys=ON');c.execute('PRAGMA busy_timeout=20000');return c
+    c=sqlite3.connect(DB,timeout=20);c.row_factory=sqlite3.Row;c.execute('PRAGMA foreign_keys=ON');c.execute('PRAGMA busy_timeout=20000')
+    try:
+        with c:yield c
+    finally:c.close()
 
 def init():
     DATA.mkdir(parents=True,exist_ok=True)
@@ -32,6 +47,7 @@ def init():
         CREATE TABLE IF NOT EXISTS login_attempts(id INTEGER PRIMARY KEY, username TEXT NOT NULL, ip TEXT NOT NULL, success INTEGER NOT NULL, at INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS ix_attendance_date ON attendance(work_date);
         CREATE INDEX IF NOT EXISTS ix_sessions_expiry ON sessions(expires_at);
+        CREATE TABLE IF NOT EXISTS shortcuts(employee_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, locator TEXT NOT NULL UNIQUE, issued_by INTEGER NOT NULL REFERENCES users(id), issued_at TEXT NOT NULL);
         ''')
 
 def hash_password(p):
@@ -70,11 +86,17 @@ def backup():
     return str(filename)
 
 class Handler(BaseHTTPRequestHandler):
+    def send_bytes(self,raw,typ):
+        self.send_response(200);self.headers_common(typ);self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
+    def shortcut(self,locator):
+        if not re.fullmatch(r'[A-Za-z0-9_-]{32}',locator):return None
+        with db() as c:
+            return c.execute("SELECT s.* FROM shortcuts s JOIN users u ON u.id=s.employee_id WHERE locator=? AND u.active=1 AND u.role='employee'",(locator,)).fetchone()
     def log_message(self,fmt,*args):print('%s %s'%(self.address_string(),fmt%args))
     def headers_common(self,typ='application/json; charset=utf-8'):
         self.send_header('Content-Type',typ);self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('X-Frame-Options','DENY');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'self'")
-    def send_json(self,code,obj,cookie=None):
-        raw=json.dumps(obj,ensure_ascii=False).encode();self.send_response(code);self.headers_common();self.send_header('Content-Length',str(len(raw)))
+    def send_json(self,code,obj,cookie=None,typ='application/json; charset=utf-8'):
+        raw=json.dumps(obj,ensure_ascii=False).encode();self.send_response(code);self.headers_common(typ);self.send_header('Content-Length',str(len(raw)))
         if cookie:self.send_header('Set-Cookie',cookie)
         self.end_headers();self.wfile.write(raw)
     def fail(self,code,msg):self.send_json(code,{'error':msg})
@@ -100,6 +122,21 @@ class Handler(BaseHTTPRequestHandler):
         return u
     def do_GET(self):
         p=urlsplit(self.path).path
+        if p.startswith('/s/'):
+            link=self.shortcut(p[3:])
+            if not link:return self.fail(404,'사용할 수 없는 바로가기입니다.')
+            u=self.session()
+            if u and (u['role']!='employee' or u['id']!=link['employee_id']):return self.fail(403,'이 바로가기의 직원 계정으로 로그인하세요.')
+            return self.send_bytes((BASE/'index.html').read_bytes(),'text/html; charset=utf-8')
+        if p=='/manifest.webmanifest' or p.startswith('/manifest/'):
+            start='/'
+            if p!='/manifest.webmanifest':
+                locator=p[len('/manifest/'):]
+                if not self.shortcut(locator):return self.fail(404,'사용할 수 없는 바로가기입니다.')
+                start='/s/'+locator
+            return self.send_json(200,{'id':start,'name':'연덕갈비 출퇴근','short_name':'출퇴근','start_url':start,'scope':'/','display':'standalone','lang':'ko','background_color':'#ffffff','theme_color':'#204b38','icons':[{'src':f'/icon-{size}.png','sizes':f'{size}x{size}','type':'image/png','purpose':'any maskable'} for size in (192,512)]},typ='application/manifest+json; charset=utf-8')
+        if p in ('/sw.js','/icon-192.png','/icon-512.png'):
+            return self.send_bytes((BASE/p[1:]).read_bytes(),'text/javascript; charset=utf-8' if p=='/sw.js' else 'image/png')
         if p=='/':
             raw=(BASE/'index.html').read_bytes();self.send_response(200);self.headers_common('text/html; charset=utf-8');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw);return
         if p in ('/app.js','/style.css'):
@@ -108,6 +145,22 @@ class Handler(BaseHTTPRequestHandler):
             u=self.session();return self.send_json(200,{'user':dict(u) if u else None})
         u=self.guard()
         if not u:return
+        if p.startswith('/api/shortcut/'):
+            link=self.shortcut(p[len('/api/shortcut/'):])
+            if not link:return self.fail(404,'사용할 수 없는 바로가기입니다.')
+            if u['role']!='employee' or u['id']!=link['employee_id']:return self.fail(403,'이 바로가기의 직원 계정으로 로그인하세요.')
+            return self.send_json(200,{'ok':True})
+        match=re.fullmatch(r'/api/employees/(\d+)/shortcut(?:/qr)?',p)
+        if match:
+            if u['role']!='admin':return self.fail(403,'관리자 전용')
+            with db() as c:link=c.execute("SELECT s.locator FROM shortcuts s JOIN users u ON u.id=s.employee_id WHERE s.employee_id=? AND u.active=1 AND u.role='employee'",(int(match[1]),)).fetchone()
+            if not link:return self.fail(404,'발급된 바로가기가 없습니다.')
+            try:url=shortcut_url(link['locator'])
+            except ValueError as e:return self.fail(503,str(e))
+            if p.endswith('/qr'):
+                out=io.BytesIO();qrcode.make(url,image_factory=qrcode.image.svg.SvgPathImage).save(out)
+                return self.send_bytes(out.getvalue(),'image/svg+xml')
+            return self.send_json(200,{'url':url})
         if p=='/api/employees':
             if u['role']!='admin':return self.fail(403,'관리자 전용')
             with db() as c:rows=c.execute("SELECT id,username,display_name,hourly_rate,active FROM users WHERE role='employee' ORDER BY id").fetchall()
@@ -139,6 +192,20 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200,{'ok':True},cookie)
         u=self.guard(write=True)
         if not u:return
+        match=re.fullmatch(r'/api/employees/(\d+)/shortcut/(issue|revoke)',p)
+        if match:
+            if u['role']!='admin':return self.fail(403,'관리자 전용')
+            employee=int(match[1]);action=match[2]
+            if action=='issue':
+                locator=secrets.token_urlsafe(24)
+                try:url=shortcut_url(locator)
+                except ValueError as e:return self.fail(503,str(e))
+            with db() as c:
+                if not c.execute("SELECT 1 FROM users WHERE id=? AND role='employee' AND active=1",(employee,)).fetchone():return self.fail(404,'직원 없음')
+                if action=='revoke':c.execute('DELETE FROM shortcuts WHERE employee_id=?',(employee,))
+                else:c.execute('INSERT INTO shortcuts(employee_id,locator,issued_by,issued_at) VALUES(?,?,?,?) ON CONFLICT(employee_id) DO UPDATE SET locator=excluded.locator,issued_by=excluded.issued_by,issued_at=excluded.issued_at',(employee,locator,u['id'],now()))
+                audit(c,u['id'],'shortcut_'+action,employee)
+            return self.send_json(200,{'ok':True,**({'url':url} if action=='issue' else {})})
         if p=='/api/logout':
             ck=SimpleCookie();ck.load(self.headers.get('Cookie',''));t=ck.get('yd_session')
             with db() as c:
