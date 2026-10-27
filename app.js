@@ -1,6 +1,8 @@
 'use strict';
 let user=null;
 let adminMode=false;
+const shortcut=location.pathname.startsWith('/s/')?location.pathname.slice(3):null;
+if(shortcut)document.querySelector('link[rel="manifest"]').href='/manifest/'+encodeURIComponent(shortcut);
 const el=id=>document.getElementById(id);
 const show=(id,visible)=>{el(id).hidden=!visible;};
 function notice(message){el('notice').textContent=message;}
@@ -13,6 +15,10 @@ async function api(path,data){
 }
 async function refresh(){
   user=(await api('/api/me')).user;
+  if(shortcut&&user){
+    try{await api('/api/shortcut/'+encodeURIComponent(shortcut));}
+    catch(error){show('workPanel',false);show('records',false);show('adminTools',false);el('rows').replaceChildren();show('loginPanel',false);show('account',true);throw error;}
+  }
   const authorized=Boolean(adminMode&&user?.role==='admin');
   show('employee',!adminMode);show('admin',adminMode);
   el('mode').textContent=adminMode?'직원 화면':'관리자 모드';
@@ -29,6 +35,7 @@ async function refresh(){
     const employees=(await api('/api/employees')).items.filter(e=>e.active);
     const select=el('work').elements.employee_id;select.replaceChildren();
     for(const employee of employees){const option=document.createElement('option');option.value=employee.id;option.textContent=employee.display_name;select.append(option);}
+    el('shortcutEmployee').replaceChildren(...Array.from(select.options,option=>option.cloneNode(true)));
   }
   if(authorized||(!adminMode&&user?.role==='employee')){
     const records=(await api('/api/attendance')).items;
@@ -61,5 +68,18 @@ el('newEmployee').addEventListener('submit',action(async event=>{
   await api('/api/employees',data);form.reset();await refresh();notice('직원을 등록했습니다.');
 }));
 el('backup').addEventListener('click',action(async()=>{const result=await api('/api/backup',{});notice('백업 완료: '+result.filename);}));
+function clearShortcut(){el('shortcutResult').hidden=true;el('shortcutUrl').value='';el('shortcutQr').removeAttribute('src');}
+el('shortcutEmployee').addEventListener('change',clearShortcut);
+for(const operation of ['issue','revoke','view'])el('shortcut'+operation).addEventListener('click',action(async()=>{
+  clearShortcut();const path='/api/employees/'+el('shortcutEmployee').value+'/shortcut';
+  const result=operation==='view'?await api(path):await api(path+'/'+operation,{});
+  if(result.url){el('shortcutUrl').value=result.url;el('shortcutQr').src=path+'/qr';show('shortcutResult',true);}
+  notice(operation==='revoke'?'바로가기를 회수했습니다. 계정 로그인 권한은 유지됩니다.':'바로가기는 해당 직원의 로그인이 필요합니다.');
+}));
+el('logout').addEventListener('click',clearShortcut);
+let installPrompt;
+window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;show('installApp',true);});
+el('installApp').addEventListener('click',action(async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null;show('installApp',false);}}));
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>notice('홈 화면 설치 준비에 실패했습니다. 온라인으로 계속 이용할 수 있습니다.'));
 el('work').elements.work_date.value=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 refresh().catch(error=>notice(error.message));
