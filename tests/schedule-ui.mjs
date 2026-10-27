@@ -1,0 +1,15 @@
+import {registerHooks} from 'node:module';
+import {readFileSync,existsSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import ts from 'typescript';
+import assert from 'node:assert/strict';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+registerHooks({resolve(s,c,next){if(s.startsWith('.')&&c.parentURL?.startsWith('file:')){const u=new URL(s,c.parentURL);for(const ext of ['.ts','.tsx'])if(existsSync(fileURLToPath(u)+ext))return {url:u.href+ext,shortCircuit:true};}return next(s,c);},load(u,c,next){if(/\.tsx?$/.test(u))return {format:'module',source:ts.transpileModule(readFileSync(fileURLToPath(u),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX}}).outputText,shortCircuit:true};return next(u,c);}});
+const Board=(await import('../app/components/schedule-board.tsx')).default;
+const records=Array.from({length:31},(_,i)=>({key:'e_'+(i+1),employeeId:'e',date:'2020-10-'+String(i+1).padStart(2,'0'),plan:{start:'2020-10-'+String(i+1).padStart(2,'0')+'T08:00:00Z',end:'2020-10-'+String(i+1).padStart(2,'0')+'T13:00:00Z',breakMinutes:30,attendance:'work'},elapsed:true,provisional:true,confirmed:false,records:[],hours:0,plannedHours:4.5,status:'예정기록 확인'}));
+const props={records,employees:[{id:'e',name:'검증직원'}],month:'2020-10',selected:'',closed:false,onEdit(){},onConfirm(){},onBulk(){},onCheckin(){},onRefresh(){}};
+let html=renderToStaticMarkup(React.createElement(Board,props));assert.equal((html.match(/class="schedule-record /g)||[]).length,12);assert.equal((html.match(/근무완료 확인<\/button>/g)||[]).length,12);assert.ok(html.includes('다음'));assert.ok(html.includes('날짜로 찾기'));assert.ok(!html.includes('schedule-calendar-v4'));
+html=renderToStaticMarkup(React.createElement(Board,{...props,records:[records[30]]}));assert.ok(html.includes('2020-10-31'));assert.ok(html.includes('근무완료 확인'));
+html=renderToStaticMarkup(React.createElement(Board,{...props,closed:true}));assert.ok(html.includes('급여 마감 · 수정 잠금'));assert.ok(!html.includes('>근무완료 확인</button>'));
+console.log('PASS: 12-record pagination, last-day action, accessible date filter, no nested calendar scroller and closed-month lock.');

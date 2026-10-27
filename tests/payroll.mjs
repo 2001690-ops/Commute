@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {loadModule} from './compile.mjs';
+const {calculate,day,minutes}=await loadModule('lib/payroll.ts');
+const employee={id:'e1',name:'검증',rates:[{date:'2026-09-01',rate:10000},{date:'2026-09-15',rate:12000}]};
+const shift=(start,end,breaks=[])=>({employeeId:'e1',start,end,breaks});
+const data={employees:[employee],shifts:[shift('2026-09-14T08:00:00Z','2026-09-14T14:00:00Z',[{start:'2026-09-14T10:00:00Z',end:'2026-09-14T10:30:00Z'}]),shift('2026-09-30T14:00:00Z','2026-09-30T17:00:00Z'),shift('2026-10-01T08:00:00Z',null)],adjustments:{'e1_2026-09':{weeklyHours:8,extra:5000,deduction:2000,reviewed:true}}};
+const r=calculate(data,'2026-09')[0];assert.equal(r.hours,8.5);assert.equal(r.base,91000);assert.equal(r.weekly,96000);assert.equal(r.total,190000);assert.equal(r.pending,0);assert.equal(calculate(data,'2026-10')[0].pending,1);assert.equal(day('2026-09-30T17:00:00Z'),'2026-10-01');assert.equal(minutes(shift('2026-09-01T00:00:00Z',null)),0);
+assert.equal(calculate({...data,employees:[{...employee,rates:[]}]},'2026-09')[0].missing,true);
+const fractional=calculate({...data,adjustments:{'e1_2026-09':{weeklyHours:0.123456,extra:1.5,deduction:0.4}}},'2026-09')[0];assert.equal(fractional.total,fractional.base+fractional.weekly+fractional.extra-fractional.deduction);
+console.log('PASS: overnight month attribution, actual breaks, rate history, open shifts, adjustments, missing rates.');

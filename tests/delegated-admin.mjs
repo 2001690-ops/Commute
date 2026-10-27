@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict';
+import {harness} from './harness.mjs';
+import {loadModule} from './compile.mjs';
+const {manage,staff,ownerHeaders}=await harness();
+const store=await loadModule('lib/attendance-store.ts');
+const {d,rev}=await store.read();
+const salt=crypto.randomUUID(),id='delegated-test';
+globalThis.testEnv.ADMIN_EMPLOYEE_IDS=id;
+const invite='a'.repeat(64);
+d.employees.push({id,name:'관리자 시험',active:true,inviteHash:await store.digest(invite),inviteVersion:1,passwordless:true,rates:[{date:'2020-01-01',rate:12500}],pin:{salt,hash:await store.hash('123456',salt)}});
+d.employees.push({id:'ordinary',name:'직원 시험',active:true,inviteHash:await store.digest('b'.repeat(64)),inviteVersion:1,passwordless:true,rates:[],pin:{salt,hash:await store.hash('123456',salt)}});
+await store.save(d,rev);
+function post(route,body,headers={}){return route.POST(new Request('https://example.test/api',{method:'POST',headers:{'content-type':'application/json',...headers},body:JSON.stringify(body)}));}
+let login=await post(staff,{action:'login',invite});assert.equal(login.status,200);
+const cookie=login.headers.get('set-cookie').split(';')[0];
+let res=await post(staff,{action:'adminLogin',pin:'000000'},{cookie});assert.equal(res.status,401);
+res=await post(staff,{action:'adminLogin',pin:'123456'},{cookie});assert.equal(res.status,200);let {token}=await res.json();
+let headers={'x-admin-token':token};
+assert.equal((await manage.GET(new Request('https://example.test/api/manage?admin=1',{headers}))).status,200);
+assert.equal((await manage.GET(new Request('https://example.test/api/manage'))).status,401);
+assert.equal((await post(manage,{action:'login',pin:'123456'},headers)).status,403);
+let ordinary=await post(staff,{action:'login',invite:'b'.repeat(64)});const other=ordinary.headers.get('set-cookie').split(';')[0];
+assert.equal((await post(staff,{action:'adminLogin',pin:'123456'},{cookie:other})).status,403);
+globalThis.testEnv.ADMIN_EMPLOYEE_IDS='';assert.equal((await manage.GET(new Request('https://example.test/api/manage?admin=1',{headers}))).status,401);
+globalThis.testEnv.ADMIN_EMPLOYEE_IDS=id;
+const latest=await store.read();latest.d.employees.find(e=>e.id===id).inviteVersion++;await store.save(latest.d,latest.rev);
+assert.equal((await manage.GET(new Request('https://example.test/api/manage?admin=1',{headers}))).status,401);
+console.log('PASS: delegated admin PIN, permissions, ordinary staff isolation, permission removal and invitation revocation');
+
+// A configured 8-digit admin credential must not silently use the staff PIN.
+const updated=await store.read();updated.d.employees.find(e=>e.id===id).inviteVersion=1;await store.save(updated.d,updated.rev);
+globalThis.testEnv.DELEGATED_ADMIN_CREDENTIAL=JSON.stringify({employeeId:id,pin:'87654321',version:'test-v1'});
+assert.equal((await manage.GET(new Request('https://example.test/api/manage?admin=1',{headers}))).status,401);
+assert.equal((await post(staff,{action:'adminLogin',pin:'123456'},{cookie})).status,401);
+assert.equal((await post(staff,{action:'adminLogin',pin:'8765432'},{cookie})).status,401);
+res=await post(staff,{action:'adminLogin',pin:'87654321'},{cookie});assert.equal(res.status,200);
+headers={'x-admin-token':(await res.json()).token};
+assert.equal((await manage.GET(new Request('https://example.test/api/manage?admin=1',{headers}))).status,200);
+const publicView=await (await staff.GET(new Request('https://example.test/api/staff',{headers:{cookie}}))).text();
+assert.ok(!publicView.includes('87654321'));assert.ok(!publicView.includes('credentialVersion'));
+assert.equal((await post(staff,{action:'adminLogin',pin:'87654321'},{cookie:other})).status,403);
+globalThis.testEnv.DELEGATED_ADMIN_CREDENTIAL=JSON.stringify({employeeId:id,pin:'87654321',version:'test-v2'});
+assert.equal((await manage.GET(new Request('https://example.test/api/manage?admin=1',{headers}))).status,401);
+for(let i=0;i<5;i++)assert.equal((await post(staff,{action:'adminLogin',pin:'00000000'},{cookie})).status,401);
+assert.equal((await post(staff,{action:'adminLogin',pin:'87654321'},{cookie})).status,429);
+console.log('PASS: 8-digit admin credential, staff isolation, session revocation, no secret disclosure and lockout');
