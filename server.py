@@ -51,13 +51,16 @@ def create_admin(username,password):
         if c.execute("SELECT 1 FROM users WHERE role='admin'").fetchone():raise ValueError('관리자가 이미 존재합니다.')
         c.execute("INSERT INTO users(username,display_name,role,password_hash,created_at) VALUES(?,?,?,?,?)",(username,'관리자','admin',hash_password(password),now()))
 
-def duration(s,e,b):
+def duration(s,e,b,next_day=False):
     if not re.fullmatch(r'\d{2}:\d{2}',s or '') or not re.fullmatch(r'\d{2}:\d{2}',e or ''):raise ValueError('시간 형식은 HH:MM입니다.')
     a,am=map(int,s.split(':'));z,zm=map(int,e.split(':'))
     if a>23 or z>23 or am>59 or zm>59:raise ValueError('올바르지 않은 시간입니다.')
     if not isinstance(b,int) or b<0 or b>720:raise ValueError('휴게시간 범위 오류')
-    d=(z*60+zm-a*60-am)%1440
-    if d==0 or b>=d:raise ValueError('퇴근시간 또는 휴게시간을 확인하세요.')
+    if type(next_day) is not bool:raise ValueError('다음 날 퇴근 여부를 확인하세요.')
+    d=z*60+zm-a*60-am+(1440 if next_day else 0)
+    if d<=0:raise ValueError('퇴근은 출근보다 늦어야 합니다. 야간 근무는 다음 날 퇴근을 선택하세요.')
+    if d>=1440:raise ValueError('근무시간은 24시간 미만이어야 합니다. 날짜와 시간을 확인하세요.')
+    if b>=d:raise ValueError('휴게시간은 근무시간보다 짧아야 합니다.')
     return d-b
 
 def backup():
@@ -160,16 +163,27 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(employee,int):return self.fail(400,'직원을 선택하세요.')
             day=str(data.get('work_date',''));start=str(data.get('start_time',''));end=str(data.get('end_time',''));br=data.get('break_minutes')
             if not data.get('confirmed') or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day):return self.fail(400,'날짜와 근무 확인이 필요합니다.')
-            try:datetime.strptime(day,'%Y-%m-%d');minutes=duration(start,end,br)
+            next_day=data.get('next_day',False)
+            try:datetime.strptime(day,'%Y-%m-%d');minutes=duration(start,end,br,next_day)
             except ValueError as e:return self.fail(400,str(e))
+            if minutes+br>720 and data.get('long_shift_confirmed') is not True:
+                return self.fail(400,'12시간을 초과하는 근무입니다. 날짜와 시간을 다시 확인해 주세요.')
             with db() as c:
+                c.execute('BEGIN IMMEDIATE')
                 target=c.execute("SELECT id FROM users WHERE id=? AND role='employee' AND active=1",(employee,)).fetchone()
                 if not target:return self.fail(404,'직원 없음')
-                existing=c.execute('SELECT id FROM attendance WHERE employee_id=? AND work_date=?',(employee,day)).fetchone()
+                existing=c.execute('SELECT * FROM attendance WHERE employee_id=? AND work_date=?',(employee,day)).fetchone()
                 if existing and u['role']!='admin':return self.fail(409,'기존 기록은 관리자만 수정할 수 있습니다.')
+                revision=f"{existing['id']}:{existing['updated_at']}" if existing else None
+                if existing and data.get('expected_revision')!=revision:
+                    current=dict(existing)
+                    current['display_name']=c.execute('SELECT display_name FROM users WHERE id=?',(employee,)).fetchone()[0]
+                    return self.send_json(409,{'error':'기존 기록의 변경 내용을 확인해 주세요.','code':'attendance_conflict','existing':current,'revision':revision})
+                if not existing and data.get('expected_revision') is not None:
+                    return self.fail(409,'기록이 변경되었습니다. 새로고침 후 다시 확인하세요.')
                 ts=now()
                 c.execute('''INSERT INTO attendance(employee_id,work_date,start_time,end_time,break_minutes,minutes,confirmed,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,1,?,?,?) ON CONFLICT(employee_id,work_date) DO UPDATE SET start_time=excluded.start_time,end_time=excluded.end_time,break_minutes=excluded.break_minutes,minutes=excluded.minutes,updated_at=excluded.updated_at''',(employee,day,start,end,br,minutes,u['id'],ts,ts))
-                audit(c,u['id'],'update_attendance' if existing else 'create_attendance',f'{employee}:{day}',f'{start}-{end}, break={br}, minutes={minutes}')
+                audit(c,u['id'],'update_attendance' if existing else 'create_attendance',f'{employee}:{day}',json.dumps({'before':dict(existing) if existing else None,'after':{'start_time':start,'end_time':end,'next_day':next_day,'break_minutes':br,'minutes':minutes}},ensure_ascii=False))
             return self.send_json(200,{'ok':True,'minutes':minutes})
         if p=='/api/backup':
             if u['role']!='admin':return self.fail(403,'관리자 전용')
@@ -198,3 +212,4 @@ if __name__=='__main__':
         threading.Thread(target=backup_loop,daemon=True).start()
         print(f'연덕갈비 서버 시작 http://{args.host}:{args.port} (외부 접속은 HTTPS 역방향 프록시 필수)')
         ThreadingHTTPServer((args.host,args.port),Handler).serve_forever()
+
