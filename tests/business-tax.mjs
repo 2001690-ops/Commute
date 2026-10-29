@@ -1,0 +1,26 @@
+import './runtime.mjs';
+import assert from 'node:assert/strict';
+const {businessTaxes,reviewBusinessTaxes,localIncomeTax}=await import('../lib/business-tax.ts');
+const {workforceAction}=await import('../lib/workforce-actions.ts');
+const {initial}=await import('../lib/attendance-store.ts');
+assert.deepEqual(businessTaxes(1000000),{gross:1000000,incomeTax:30000,localTax:3000,totalTax:33000});
+assert.deepEqual(businessTaxes(155555),{gross:155555,incomeTax:4660,localTax:460,totalTax:5120});
+assert.equal(businessTaxes(0).totalTax,0);assert.equal(businessTaxes(10000).totalTax,330);
+for(const invalid of [-1,NaN,Infinity,1.5,10000000001])assert.throws(()=>businessTaxes(invalid));
+assert.equal(localIncomeTax(12345),1230);assert.throws(()=>localIncomeTax(-1));
+const employee={id:'a',name:'테스트',active:true,agreedWeeklyHours:20,reportReferenceHours:4,taxMode:'salary',reportType:'review',hireDate:'2026-01-01',rates:[{date:'2026-01-01',rate:12500}]};
+const d={...initial(),employees:[employee],shifts:[1,2,3].map(day=>({id:String(day),employeeId:'a',start:`2026-10-0${day}T00:00:00Z`,end:`2026-10-0${day}T10:00:00Z`,breaks:[]})),advances:[{employeeId:'a',month:'2026-10',amount:100000}]};
+const body={action:'payReview',employeeId:'a',month:'2026-10',extra:25000,weeklyOverride:true,weeklyHours:0,deduction:50000,incomeTax:0,localTax:0,note:'실제 전체 지급액 확인',taxConfirmed:true,reviewed:true,taxMethod:'business_3_3',businessIncomeConfirmed:true,gross:1};
+const before=JSON.stringify(d.shifts);
+assert.equal(reviewBusinessTaxes(d,employee,'2026-10',body).gross,400000);
+await assert.rejects(workforceAction(d,{...body,businessIncomeConfirmed:false},'2026-11-02T00:00:00Z'),/사업소득/);
+await workforceAction(d,body,'2026-11-02T00:00:00Z');
+const saved=d.adjustments.a_2026_10||d.adjustments['a_2026-10'];
+assert.equal(saved.incomeTax,12000);assert.equal(saved.localTax,1200);assert.equal(saved.taxCalculation.gross,400000);
+assert.equal(JSON.stringify(d.shifts),before);assert.equal(employee.taxMode,'salary');assert.equal(employee.reportType,'review');
+assert.equal(reviewBusinessTaxes(d,employee,'2026-10',{...body,extra:35000}).gross,410000);
+await workforceAction(d,{...body,taxMethod:'manual',incomeTax:1000,localTax:100},'2026-11-02T00:00:00Z');
+assert.equal(d.adjustments['a_2026-10'].incomeTax,1000);assert.equal(d.adjustments['a_2026-10'].taxCalculation,null);
+d.closed['2026-10']={};await assert.rejects(workforceAction(d,body,'2026-11-02T00:00:00Z'),/정산 월/);
+console.log('PASS tax arithmetic, rounding, full actual 30-hour basis, spoofed basis rejection, consent, manual mode and closed-month protection.');
+

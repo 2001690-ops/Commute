@@ -1,0 +1,268 @@
+{
+  "version": "V4.2",
+  "baseline": {
+    "benchmark": "12 employees, 4704 shifts, October payroll",
+    "before": "did not complete within 45-second timeout",
+    "after": "see benchmark-payroll.mjs and month timings"
+  },
+  "mode": "isolated in-process routes with real in-memory SQLite D1 adapter and virtual time; no production writes",
+  "months": [
+    "2025-08",
+    "2025-09",
+    "2025-10",
+    "2025-11",
+    "2025-12",
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05",
+    "2026-06",
+    "2026-07",
+    "2026-08",
+    "2026-09",
+    "2026-10"
+  ],
+  "employeeCount": 12,
+  "shiftCount": 4704,
+  "requests": 124,
+  "coveredActions": [
+    "admin:active",
+    "admin:adjust",
+    "admin:advance",
+    "admin:cancelAdvance",
+    "admin:clock",
+    "admin:close",
+    "admin:confirmSchedule",
+    "admin:contract",
+    "admin:delivery",
+    "admin:employee",
+    "admin:invite",
+    "admin:kakaoSettings",
+    "admin:login",
+    "admin:logout",
+    "admin:pattern",
+    "admin:payReview",
+    "admin:profile",
+    "admin:rate",
+    "admin:reopen",
+    "admin:resetPin",
+    "admin:revoke",
+    "admin:schedule",
+    "admin:scheduleCopy",
+    "admin:settings",
+    "admin:setup",
+    "admin:shift",
+    "staff:acceptContract",
+    "staff:clock",
+    "staff:contractDownload",
+    "staff:login",
+    "staff:logout",
+    "staff:rate"
+  ],
+  "results": [
+    {
+      "name": "Owner auth, CSRF, admin setup/login and masked employee data",
+      "status": "passed",
+      "ms": 59
+    },
+    {
+      "name": "Profile, business settings, rates, repeated patterns and schedule copy",
+      "status": "passed",
+      "ms": 12
+    },
+    {
+      "name": "Advances, cancellation, payroll review, settings and Kakao key validation",
+      "status": "passed",
+      "ms": 2
+    },
+    {
+      "name": "Invite login, staff isolation, contract acceptance/download/delivery",
+      "status": "passed",
+      "ms": 7
+    },
+    {
+      "name": "Staff clock-in/break/resume/out, duplicate prevention and current status",
+      "status": "passed",
+      "ms": 65
+    },
+    {
+      "name": "Invitation reissue, revocation, retirement/reactivation and logout",
+      "status": "passed",
+      "ms": 21
+    },
+    {
+      "name": "Atomic copy rollback, zero break and overnight calculations",
+      "status": "passed",
+      "ms": 2
+    },
+    {
+      "name": "Clock rejects overlapping manual record and re-confirmation overlap",
+      "status": "passed",
+      "ms": 0
+    },
+    {
+      "name": "Attendance and confirmation include a previous-month open shift",
+      "status": "passed",
+      "ms": 0
+    },
+    {
+      "name": "Unpaid leave is resolved and does not permanently block month closing",
+      "status": "passed",
+      "ms": 0
+    },
+    {
+      "name": "Leap day, year boundary, retirement and reporting reference separation",
+      "status": "passed",
+      "ms": 0
+    },
+    {
+      "name": "Network errors, malformed responses, saved-but-refresh-failed and copy fallback",
+      "status": "passed",
+      "ms": 2
+    },
+    {
+      "name": "Optimistic concurrency prevents lost updates",
+      "status": "passed",
+      "ms": 0
+    },
+    {
+      "name": "Manual shift creation/edit, overlap rejection and unknown employee",
+      "status": "passed",
+      "ms": 2
+    },
+    {
+      "name": "Automatic and check-in schedule confirmation, attendance flags and leave",
+      "status": "passed",
+      "ms": 2
+    },
+    {
+      "name": "Weekly benefit arithmetic, absences, tax estimates and pay deductions",
+      "status": "passed",
+      "ms": 1
+    },
+    {
+      "name": "Admin login lockout and expired staff sessions",
+      "status": "passed",
+      "ms": 103
+    },
+    {
+      "name": "Parallel writes reject a stale revision and keep exactly one result",
+      "status": "passed",
+      "ms": 0
+    },
+    {
+      "name": "Confirmation via authenticated API and overlap protection at clock-in",
+      "status": "passed",
+      "ms": 1
+    },
+    {
+      "name": "Date boundaries use Korea time and do not reuse stale payroll caches",
+      "status": "passed",
+      "ms": 2
+    },
+    {
+      "name": "15-month simulation: 12 employees, monthly payroll and independent money checks",
+      "status": "passed",
+      "ms": 478
+    },
+    {
+      "name": "15 monthly close snapshots, closed protection and reopening",
+      "status": "passed",
+      "ms": 1654
+    },
+    {
+      "name": "15-month daily payroll report totals and no cross-employee leakage",
+      "status": "passed",
+      "ms": 335
+    }
+  ],
+  "measurements": [
+    {
+      "month": "2025-08",
+      "employees": 12,
+      "ms": 17
+    },
+    {
+      "month": "2025-09",
+      "employees": 12,
+      "ms": 13
+    },
+    {
+      "month": "2025-10",
+      "employees": 12,
+      "ms": 17
+    },
+    {
+      "month": "2025-11",
+      "employees": 12,
+      "ms": 21
+    },
+    {
+      "month": "2025-12",
+      "employees": 12,
+      "ms": 11
+    },
+    {
+      "month": "2026-01",
+      "employees": 12,
+      "ms": 18
+    },
+    {
+      "month": "2026-02",
+      "employees": 12,
+      "ms": 22
+    },
+    {
+      "month": "2026-03",
+      "employees": 12,
+      "ms": 19
+    },
+    {
+      "month": "2026-04",
+      "employees": 12,
+      "ms": 17
+    },
+    {
+      "month": "2026-05",
+      "employees": 12,
+      "ms": 18
+    },
+    {
+      "month": "2026-06",
+      "employees": 12,
+      "ms": 10
+    },
+    {
+      "month": "2026-07",
+      "employees": 12,
+      "ms": 19
+    },
+    {
+      "month": "2026-08",
+      "employees": 12,
+      "ms": 19
+    },
+    {
+      "month": "2026-09",
+      "employees": 12,
+      "ms": 20
+    },
+    {
+      "month": "2026-10",
+      "employees": 12,
+      "ms": 17
+    },
+    {
+      "serializedBytes": 1784717,
+      "closedMonths": 15
+    }
+  ],
+  "passed": 23,
+  "failed": 0,
+  "limits": [
+    "No production Cloudflare/D1 throughput or real simultaneous mobile devices tested",
+    "Kakao delivery, physical printing and downloads are not live end-to-end verified",
+    "CSV is review material, not government submission format; legal payroll correctness is not certified"
+  ]
+}
