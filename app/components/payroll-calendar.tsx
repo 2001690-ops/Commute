@@ -1,5 +1,6 @@
 'use client';
 import {useState} from 'react';
+import {displayedWork} from '../../lib/payroll-display';
 import {dailyRecords,rateAt} from '../../lib/workforce';
 const money=(n:number)=>Math.round(n).toLocaleString('ko-KR');
 const week=['일','월','화','수','목','금','토'];
@@ -17,11 +18,9 @@ export default function PayrollCalendar({data,month,rows}:{data:any,month:string
  const detail=(d:number)=>{
   const date=`${month}-${String(d).padStart(2,'0')}`;
   const r:any=byDate.get(date);
-  const actual=Number(r?.hours||0);
-  const planned=Number(r?.plannedHours||0);
-  const hours=actual>0?actual:planned;
+  const {hours,actual}=displayedWork(r);
   const wage=hours*rateAt(person,date);
-  return {r,hours,wage,actual:actual>0};
+  return {r,hours,wage,actual};
  };
  const total=cells.filter(d=>d>=1&&d<=days).reduce((a,d)=>a+detail(d).wage,0);
  return <section className="card payroll-calendar-card" aria-label="직원별 일별 급여 달력">

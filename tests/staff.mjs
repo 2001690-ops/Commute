@@ -1,3 +1,4 @@
+import {documentPayload} from './d1-adapter.mjs';
 import assert from 'node:assert/strict';
 import {harness} from './harness.mjs';
 const {manage,staff,sql,ownerHeaders}=await harness();
@@ -10,14 +11,14 @@ let r=await admin({action:'setup',pin:'781632'});token=r.body.token;assert.ok(to
 for(let name of ['직원A','직원B'])assert.equal((await admin({action:'employee',name,rate:10000,date:'2026-09-01',pin:'9182'})).status,200);
 const get=async()=> (await invoke(manage.GET,'/api/manage?admin=1',null,{...ownerHeaders,'x-admin-token':token})).body;
 let data=await get();const [a,b]=data.employees;
-let fixture=JSON.parse(sql.prepare('select payload from attendance_store where id=1').get().payload);fixture.employees.forEach(e=>e.passwordless=false);sql.prepare('update attendance_store set payload=? where id=1').run(JSON.stringify(fixture));
+let fixture=JSON.parse(documentPayload(sql));fixture.employees.forEach(e=>e.passwordless=false);sql.prepare('update attendance_store set payload=? where id=1').run(JSON.stringify(fixture));
 const rawA=(await admin({action:'invite',id:a.id})).body.invite;const rawB=(await admin({action:'invite',id:b.id})).body.invite;assert.match(rawA,/^[a-f0-9]{64}$/);
 assert.equal((await invoke(staff.POST,'/api/staff',{action:'login',invite:'0'.repeat(64),pin:'9182'})).status,401);
 assert.equal((await invoke(staff.GET,'/api/staff')).status,401);
 r=await invoke(staff.POST,'/api/staff',{action:'login',invite:rawA,pin:'bad'});assert.equal(r.status,401);assert.equal(JSON.stringify(r.body).includes('직원A'),false);
 r=await invoke(staff.POST,'/api/staff',{action:'login',invite:rawA,pin:'9182'});assert.equal(r.status,200);assert.equal(r.body.employee.name,'직원A');assert.match(r.rawCookie,/HttpOnly/);assert.match(r.rawCookie,/Secure/);const cookie=r.cookie;
 const hash=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(v=>v.toString(16).padStart(2,'0')).join('');
-let stored=sql.prepare('select payload from attendance_store where id=1').get().payload;assert.equal(stored.includes(rawA),false);assert.equal(stored.includes(cookie.split('=')[1]),false);
+let stored=documentPayload(sql);assert.equal(stored.includes(rawA),false);assert.equal(stored.includes(cookie.split('=')[1]),false);
 assert.equal((await invoke(manage.GET,'/api/manage?admin=1',null,{'x-admin-token':token})).status,401);
 assert.equal((await invoke(manage.POST,'/api/manage',{action:'invite',id:a.id},{cookie})).status,401);
 assert.equal((await invoke(staff.POST,'/api/staff',{action:'employee',name:'hack'},{cookie})).status,403);
@@ -57,3 +58,4 @@ assert.equal((await invoke(staff.POST,'/api/staff',{action:'login',invite:rawB,p
 assert.equal((await admin({action:'kakaoSettings',key:'not-a-key'})).status,400);
 assert.equal((await admin({action:'kakaoSettings',key:'a'.repeat(32)})).status,200);
 console.log('PASS: public bootstrap denied; owner identity + PIN; staff link/PIN; HttpOnly sessions; hashed credentials; own records only; body-ID tampering; duplicate clock; link rotation/revocation; PIN reset; lockout; CSRF; logout; inactive employee; Kakao settings.');
+

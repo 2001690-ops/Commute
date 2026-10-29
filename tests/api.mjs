@@ -27,7 +27,7 @@ data=await get();assert.equal(data.closed['2026-09'].rows[0].total,136000);
 assert.equal((await post({action:'adjust',id,month:'2026-09',weeklyHours:0},token)).status,400);
 assert.equal((await post({action:'reopen',month:'2026-09',reason:'검증'},token)).status,200);
 const s=(await get()).shifts.find(s=>s.start.startsWith('2026-09'));
-assert.equal((await post({action:'shift',id:s.id,employeeId:id,start:s.start,end:s.end,breakMinutes:60,reason:'휴게 수정'},token)).status,200);
+assert.equal((await post({action:'shift',id:s.id,expectedSnapshot:JSON.stringify({id:s.id,employeeId:s.employeeId,start:s.start,end:s.end,breaks:s.breaks}),employeeId:id,start:s.start,end:s.end,breakMinutes:60,reason:'휴게 수정'},token)).status,200);
 assert.equal((await get()).adjustments[id+'_2026-09'].reviewed,false);
 assert.equal((await post({action:'close',month:'2026-09'},token)).status,400);
 assert.equal((await post({action:'logout'},token)).status,200);

@@ -1,3 +1,7 @@
+# 연덕갈비 Commute V5.3.3
+
+첨부 V5.3.3 전체 소스와 근태·급여 검토 수정본입니다. 실행·배포 전 [수정 내용과 DB 마이그레이션 안내](docs/V5.3.3-review-fixes.md)를 확인하세요.
+
 # vinext-starter
 
 A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.

@@ -1,4 +1,5 @@
 'use client';
+import {displayedWork} from '../../lib/payroll-display';
 
 const money=(n:number)=>Math.round(n).toLocaleString('ko-KR');
 const week=['일','월','화','수','목','금','토'];
@@ -12,11 +13,9 @@ export default function StaffPayrollCalendar({month,records,employeeName}:{month
  const detail=(d:number)=>{
   const date=`${month}-${String(d).padStart(2,'0')}`;
   const r:any=byDate.get(date);
-  const actual=Number(r?.hours||0);
-  const planned=Number(r?.plannedHours||0);
-  const hours=actual>0?actual:planned;
+  const {hours,actual}=displayedWork(r);
   const rate=Number(r?.rate||0);
-  return {r,hours,rate,wage:hours*rate,actual:actual>0};
+  return {r,hours,rate,wage:hours*rate,actual};
  };
  const total=cells.filter(d=>d>=1&&d<=days).reduce((sum,d)=>sum+detail(d).wage,0);
  return <section className="card payroll-calendar-card" aria-label="내 일별 근무·급여 달력">

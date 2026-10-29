@@ -5,8 +5,8 @@ const invoke=async(fn,route,body,headers={})=>{const r=await fn(request(route,bo
 let token='';const post=async body=>invoke(manage.POST,'/api/manage',body,{...ownerHeaders,'x-admin-token':token});const get=async()=> (await invoke(manage.GET,'/api/manage?admin=1',null,{...ownerHeaders,'x-admin-token':token})).data;
 assert.equal((await invoke(manage.POST,'/api/manage',{action:'pattern'})).status,401);
 token=(await post({action:'setup',pin:'781632'})).data.token;
-assert.equal((await post({action:'settings',employerName:'사업주 검증',address:'사업장 주소',communityUrl:'https://open.kakao.com/o/TestRoom',payDay:10,lateGraceMinutes:5})).status,200);
-assert.equal((await post({action:'settings',employerName:'사업주 검증',address:'주소',communityUrl:'https://open.kakao.com.evil.invalid/o/x',payDay:10,lateGraceMinutes:5})).status,400);
+assert.equal((await post({action:'settings',employerName:'사업주 검증',address:'사업장 주소',communityUrl:'https://open.kakao.com/o/TestRoom',payDay:'month_end',lateGraceMinutes:5})).status,200);
+assert.equal((await post({action:'settings',employerName:'사업주 검증',address:'주소',communityUrl:'https://open.kakao.com.evil.invalid/o/x',payDay:'month_end',lateGraceMinutes:5})).status,400);
 for(let name of ['직원 가','직원 나'])assert.equal((await post({action:'employee',name,rate:10000,date:'2026-09-01',hireDate:'2026-09-01',agreedWeeklyHours:33})).status,200);
 const [a,b]=(await get()).employees;assert.equal(a.passwordless,true);
 const invite=(await post({action:'invite',id:a.id})).data.invite;
@@ -45,3 +45,4 @@ assert.equal((await invoke(staff.POST,'/api/staff',{action:'contractDownload',id
 assert.equal((await invoke(staff.GET,'/api/staff?month=2026-09',null,{cookie:bc})).data.contracts.length,0);
 assert.equal((await invoke(staff.GET,'/api/staff?month=2026-09',null,{cookie:bc})).data.advances.length,0);
 console.log('PASS: owner-only scheduling, passwordless own-link access, planned vs confirmed pay, actual confirmation, honest hour settings, advances, payroll close snapshots, immutable contract versions, employee agreement and download, separate delivery check, cross-employee privacy, official Kakao link validation.');
+
