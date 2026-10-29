@@ -1,0 +1,4 @@
+import ts from 'typescript';import {readFileSync} from 'node:fs';import path from 'node:path';
+const cache=new Map();
+export function moduleUrl(filename){filename=path.resolve(filename);if(cache.has(filename))return cache.get(filename);let text=readFileSync(filename,'utf8').replace(/import\s*\{env\}\s*from\s*['"]cloudflare:workers['"];?/g,'const env=globalThis.testEnv;');text=text.replace(/from\s+(['"])(\.[^'"]+)\1/g,(whole,q,target)=>{let p=path.resolve(path.dirname(filename),target);if(!path.extname(p))p+='.ts';return 'from '+JSON.stringify(moduleUrl(p));});const code=ts.transpileModule(text,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText;const url='data:text/javascript;base64,'+Buffer.from(code).toString('base64');cache.set(filename,url);return url;}
+export const loadModule=filename=>import(moduleUrl(filename));
